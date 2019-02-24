@@ -25,6 +25,7 @@ RUN \
   echo "$GET_PIP_SUM  /tmp/get-pip.py" | sha256sum --check && \
   python2.6 /tmp/get-pip.py -v && \
   rm -f /tmp/get-pip.py && \
-  pip install pipenv
+  pip install pipenv && \
+  ln -s /usr/bin/python2.6 /usr/bin/python
 
 USER circleci
