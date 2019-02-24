@@ -1,0 +1,245 @@
+version: 2.1
+
+description: |-
+  Commands, jobs and executors for testing Python projects.
+
+
+executors:
+
+  python26:
+    description: An environment with Python 2.6, pip & virtualenv
+    docker:
+    - image: quay.io/rohanpm/circleci-python:2.6
+    environment:
+      CIRCLECI_PYTHON_EXECUTOR: python26
+
+  python27:
+    description: An environment with Python 2.7, pip & virtualenv
+    docker:
+    - image: circleci/python:2.7.15-stretch
+    environment:
+      CIRCLECI_PYTHON_EXECUTOR: python27
+
+  python36:
+    description: An environment with Python 3.6, pip & virtualenv
+    docker:
+    - image: circleci/python:3.6.8-stretch
+    environment:
+      CIRCLECI_PYTHON_EXECUTOR: python36
+
+
+commands:
+
+  pip_user_install:
+
+    description: |-
+      Install one or more packages from PyPI into the local installation
+      prefix of the test user, which will be cached.
+
+    parameters:
+
+      requirements:
+        description: pip requirements specifier(s)
+        type: string
+
+    steps:
+    - restore_cache:
+        name: Restore pip user install cache
+        key: v1-local-venv-<< parameters.requirements >>
+
+    - run:
+        name: Install from PyPI
+        command: |
+          pip install --user << parameters.requirements >>
+
+    - save_cache:
+        name: Save pip user install cache
+        key: v1-local-venv-<< parameters.requirements >>
+        paths:
+          - "~/.local"
+
+  tox:
+    description: |-
+      Run one or more tox environments.
+
+    parameters:
+      toxenv:
+        description: tox environment name, or multiple comma-separated names.
+        type: string
+
+    steps:
+    - run:
+        name: Run tox
+        command: |-
+          ~/.local/bin/tox -e << parameters.toxenv >>
+
+jobs:
+  tox:
+    description: |-
+      Test a project using tox:
+
+      - checkout sources
+      - install tox
+      - run tox environment(s)
+      - store test results (optional)
+      - persist coverage data (optional)
+
+    parameters:
+
+      executor:
+        description: Executor used for this tox run; use this to select major Python version.
+        type: executor
+        default: python36
+
+      toxenv:
+        description: tox environment name, or multiple comma-separated names.
+        type: string
+
+      persist_coverage:
+        description: |-
+          If true, any .coverage data produced by the tox run will be persisted
+          to workspace, for use by one of the coverage-submitting jobs provided
+          by this orb.
+
+          The layout of the persisted coverage files is not defined and is intended
+          for use only with the coverage-submitting jobs within this orb.
+        type: boolean
+        default: false
+
+      store_test_results:
+        description: |-
+          If this tox run created any JUnit XML reports, they will be stored to
+          CircleCI when this option is set.
+
+          It is generally harmless to leave this option enabled even if the tox
+          run will not create a JUnit XML report.
+        type: boolean
+        default: true
+
+    executor: << parameters.executor >>
+
+    steps:
+      - checkout
+
+      - restore_cache:
+          key: v1-cache-pip-<< parameters.toxenv >>-{{ checksum "requirements.txt" }}-{{ checksum "test-requirements.txt" }}
+
+      - pip_user_install:
+          requirements: tox
+
+      - tox:
+          toxenv: << parameters.toxenv >>
+
+      - when:
+          condition: << parameters.persist_coverage >>
+          steps:
+          - run:
+              name: Prepare coverage file
+              command: >-
+                if test -f .coverage; then
+                  mv -v .coverage coverage.${CIRCLECI_PYTHON_EXECUTOR}.<< parameters.toxenv >>;
+                fi
+
+          - persist_to_workspace:
+              root: .
+              paths:
+              - coverage.*
+
+      - when:
+          condition: << parameters.store_test_results >>
+          steps:
+          - run:
+              name: Gather test results
+              command: |-
+                set -xe
+                pkgname=$(python ./setup.py --name)
+                destdir=/tmp/circle-python-test-results/${pkgname}
+                mkdir -p $destdir
+                find . '-(' -not -name '.' -name '.*' -prune '-)' -o -name '*.xml' -print |
+                  while read xml; do
+                    if head -n2 $xml | grep -q '<testsuite'; then
+                      cp -v $xml $destdir
+                    fi;
+                  done
+
+          - store_test_results:
+              name: Store test results
+              path: /tmp/circle-python-test-results
+
+      - save_cache:
+          key: v1-cache-pip-<< parameters.toxenv >>-{{ checksum "requirements.txt" }}-{{ checksum "test-requirements.txt" }}
+          paths:
+            - "~/.cache/pip"
+
+  coveralls:
+    description: |-
+      Submit coverage data to coveralls.io.
+
+      - Coverage data is read from workspace, as persisted by completed tox jobs where
+        persist_coverage is enabled.
+
+      - If the workspace contains multiple coverage reports, they'll be merged while
+        sending to coveralls.
+
+      - Requires `COVERALLS_REPO_TOKEN` to be set.
+
+    executor: python36
+
+    steps:
+      - pip_user_install:
+          requirements: coveralls
+
+      - checkout
+
+      - attach_workspace:
+          at: /tmp/workspace
+
+      - run:
+          name: Coveralls submit
+          command: |-
+            set -xe
+            while true; do
+              set -- /tmp/workspace/coverage.*
+              mv "$1" .coverage
+              if test "$#" -eq 1; then
+                ~/.local/bin/coveralls --merge coverage.json
+                exit 0
+              elif test -f coverage.json; then
+                ~/.local/bin/coveralls --merge coverage.json --output coverage-new.json
+                mv coverage-new.json coverage.json
+              else
+                ~/.local/bin/coveralls --output coverage.json
+              fi
+            done
+
+  release:
+    description: |-
+      Release project to PyPI.
+
+      - Only uploads for tag-triggered builds.
+
+      - Requires `TWINE_USERNAME`, `TWINE_PASSWORD` environment variables.
+        Skips upload if `TWINE_USERNAME` is unset.
+
+      - The released artifacts are always `sdist` and `bdist_wheel`.
+
+    executor: python36
+
+    steps:
+
+    - checkout
+
+    - pip_user_install:
+        requirements: twine
+
+    - run:
+        name: Build distribution
+        command: python ./setup.py sdist bdist_wheel
+
+    - run:
+        name: Upload to PyPI
+        command: |-
+          set -xe
+          if ! test -z "${TWINE_USERNAME}" && ! test -z "${CIRCLE_TAG}"; then
+            ~/.local/bin/twine upload --skip-existing dist/*.tar.gz dist/*.whl
+          fi
