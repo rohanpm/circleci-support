@@ -3,6 +3,8 @@ version: 2.1
 description: |-
   Commands, jobs and executors for testing Python projects.
 
+orbs:
+  codeclimate: rohanpm/codeclimate@1.0.0
 
 executors:
 
@@ -72,6 +74,7 @@ commands:
         name: Run tox
         command: |-
           ~/.local/bin/tox -e << parameters.toxenv >>
+
 
 jobs:
   tox:
@@ -171,6 +174,7 @@ jobs:
           paths:
             - "~/.cache/pip"
 
+
   coveralls:
     description: |-
       Submit coverage data to coveralls.io.
@@ -211,6 +215,60 @@ jobs:
                 ~/.local/bin/coveralls --output coverage.json
               fi
             done
+
+
+  codeclimate-upload-coverage:
+    description: |-
+      Submit coverage data to Code Climate.
+
+      - Coverage data is read from workspace, as persisted by completed tox jobs where
+        persist_coverage is enabled.
+
+      - If the workspace contains multiple coverage reports, they'll be merged while
+        sending to Code Climate.
+
+    environment:
+      CC_TEST_REPORTER_ID: << parameters.test_reporter_id >>
+
+    parameters:
+      test_reporter_id:
+        type: string
+        description: |-
+          Test reporter ID as found in Code Climate repo settings;
+          also known as `CC_TEST_REPORTER_ID`.
+
+    executor: python36
+
+    steps:
+      - codeclimate/install_cc_test_reporter
+
+      - pip_user_install:
+          requirements: coverage
+
+      - checkout
+
+      - attach_workspace:
+          at: /tmp/workspace
+
+      - run:
+          name: codeclimate submit
+          command: |-
+            set -xe
+            i=1
+            while true; do
+              set -- /tmp/workspace/coverage.*
+              mv "$1" .coverage
+              ~/.local/bin/coverage xml
+              cc-test-reporter format-coverage -o /tmp/codeclimate-$i.json
+              i=$(expr $i + 1)
+              rm -f coverage.xml
+              if test "$#" -eq 1; then
+                break
+              fi
+            done
+            cc-test-reporter sum-coverage /tmp/codeclimate-*.json
+            cc-test-reporter upload-coverage
+
 
   release:
     description: |-

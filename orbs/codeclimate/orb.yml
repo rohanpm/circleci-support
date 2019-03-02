@@ -1,0 +1,38 @@
+version: 2.1
+
+description: |-
+  Commands for usage with Code Climate.
+
+commands:
+
+  install_cc_test_reporter:
+
+    description: Install cc-test-reporter to /usr/local/bin.
+
+    parameters:
+
+      version:
+        type: string
+        default: 0.6.3
+
+    steps:
+    - restore_cache:
+        name: Restore cc-test-reporter cache
+        key: v2-cc-test-reporter-<< parameters.version >>
+
+    - run:
+        name: Install cc-test-reporter
+        command: |-
+          if ! test -f /tmp/cc-test-reporter/test-reporter-<< parameters.version >>-linux-amd64; then
+            mkdir -p /tmp/cc-test-reporter
+            cd /tmp/cc-test-reporter
+            sudo curl -LO https://codeclimate.com/downloads/test-reporter/test-reporter-<< parameters.version >>-linux-amd64
+            sudo chmod +x test-reporter-<< parameters.version >>-linux-amd64
+          fi
+          sudo ln -sf /tmp/cc-test-reporter/test-reporter-<< parameters.version >>-linux-amd64 /usr/local/bin/cc-test-reporter
+
+    - save_cache:
+        name: Save cc-test-reporter cache
+        key: v2-cc-test-reporter-<< parameters.version >>
+        paths:
+          - /tmp/cc-test-reporter
