@@ -3,6 +3,10 @@ version: 2.1
 description: |-
   Commands, jobs and executors for testing Python projects.
 
+  Changelog:
+  - 1.1.1: fix jobs/coveralls when used with a single test job
+
+
 orbs:
   codeclimate: rohanpm/codeclimate@1.0.0
 
@@ -206,7 +210,11 @@ jobs:
               set -- /tmp/workspace/coverage.*
               mv "$1" .coverage
               if test "$#" -eq 1; then
-                ~/.local/bin/coveralls --merge coverage.json
+                if test -f coverage.json; then
+                  ~/.local/bin/coveralls --merge coverage.json
+                else
+                  ~/.local/bin/coveralls
+                fi
                 exit 0
               elif test -f coverage.json; then
                 ~/.local/bin/coveralls --merge coverage.json --output coverage-new.json
