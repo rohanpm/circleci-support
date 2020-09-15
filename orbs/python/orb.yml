@@ -4,6 +4,7 @@ description: |-
   Commands, jobs and executors for testing Python projects.
 
   Changelog:
+  - 1.3.0: added python38 executor as new default
   - 1.2.0: added python37 executor as new default
   - 1.1.1: fix jobs/coveralls when used with a single test job
 
@@ -40,6 +41,13 @@ executors:
     - image: circleci/python:3.7.2-stretch
     environment:
       CIRCLECI_PYTHON_EXECUTOR: python37
+
+  python38:
+    description: An environment with Python 3.8, pip & virtualenv
+    docker:
+    - image: circleci/python:3.8.5-buster
+    environment:
+      CIRCLECI_PYTHON_EXECUTOR: python38
 
 commands:
 
@@ -103,7 +111,7 @@ jobs:
       executor:
         description: Executor used for this tox run; use this to select major Python version.
         type: executor
-        default: python37
+        default: python38
 
       toxenv:
         description: tox environment name, or multiple comma-separated names.
@@ -198,7 +206,7 @@ jobs:
 
       - Requires `COVERALLS_REPO_TOKEN` to be set.
 
-    executor: python37
+    executor: python38
 
     steps:
       - pip_user_install:
@@ -252,7 +260,7 @@ jobs:
           Test reporter ID as found in Code Climate repo settings;
           also known as `CC_TEST_REPORTER_ID`.
 
-    executor: python37
+    executor: python38
 
     steps:
       - codeclimate/install_cc_test_reporter
@@ -296,7 +304,7 @@ jobs:
 
       - The released artifacts are always `sdist` and `bdist_wheel`.
 
-    executor: python37
+    executor: python38
 
     steps:
 
